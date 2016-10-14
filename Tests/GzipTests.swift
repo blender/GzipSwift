@@ -38,10 +38,10 @@ class NSData_GZIPTests: XCTestCase {
         
         let testSentence = "foo"
         
-        let data = testSentence.data(using: .utf8)!
+        let data = testSentence.dataUsingEncoding(NSUTF8StringEncoding)!
         let gzipped = try! data.gzipped()
         let uncompressed = try! gzipped.gunzipped()
-        let uncompressedSentence = String(data: uncompressed, encoding: .utf8)
+        let uncompressedSentence = String(data: uncompressed, encoding: NSUTF8StringEncoding)
         
         XCTAssertNotEqual(gzipped, data)
         XCTAssertEqual(uncompressedSentence, testSentence)
@@ -54,7 +54,7 @@ class NSData_GZIPTests: XCTestCase {
     
     func testZeroLength() {
         
-        let zeroLengthData = Data()
+        let zeroLengthData = NSData()
         
         XCTAssertEqual(try! zeroLengthData.gzipped(), zeroLengthData)
         XCTAssertEqual(try! zeroLengthData.gunzipped(), zeroLengthData)
@@ -65,9 +65,9 @@ class NSData_GZIPTests: XCTestCase {
     func testWrongUngzip() {
         
         // data not compressed
-        let data = "testString".data(using: .utf8)!
+        let data = "testString".dataUsingEncoding(NSUTF8StringEncoding)!
         
-        var uncompressed: Data?
+        var uncompressed: NSData?
         do {
             uncompressed = try data.gunzipped()
         } catch let error as GzipError {
@@ -87,21 +87,22 @@ class NSData_GZIPTests: XCTestCase {
     
     func testCompressionLevel() {
         
-        let data = String.lorem(length: 100_000).data(using: .utf8)!
+        let data = String.lorem(100_000).dataUsingEncoding(NSUTF8StringEncoding)!
         
-        XCTAssertGreaterThan(try! data.gzipped(level: .bestSpeed).count,
-                             try! data.gzipped(level: .bestCompression).count)
+        XCTAssertGreaterThan(try! data.gzipped(.bestSpeed).length,
+                             try! data.gzipped(.bestCompression).length)
     }
     
     
     func testFileDecompression() {
         
-        let bundle = Bundle(for: type(of: self))
-        let url = bundle.url(forResource: "test.txt", withExtension: "gz")!
-        let data = try! Data(contentsOf: url)
+        let bundle = NSBundle(forClass: NSData_GZIPTests.self)
+        let url = bundle.URLForResource("test.txt", withExtension: "gz")!
+        let data = try! NSData(contentsOfURL: url)!
         let uncompressed = try! data.gunzipped()
         
-        XCTAssertEqual(String(data: uncompressed, encoding: .utf8), "test")
+        
+        XCTAssertEqual(String(data: uncompressed, encoding: NSUTF8StringEncoding), "test")
     }
     
 }
@@ -117,9 +118,9 @@ private extension String {
         var string = ""
         for _ in 0..<length {
             let rand = Int(arc4random_uniform(UInt32(letters.characters.count)))
-            let index = letters.index(letters.startIndex, offsetBy: rand)
-            let character = letters.characters[index]
-            string.append(character)
+            
+            let index = letters[letters.startIndex.advancedBy(rand)]
+            string.append(index)
         }
         
         return string

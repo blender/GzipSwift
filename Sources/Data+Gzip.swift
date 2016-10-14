@@ -47,7 +47,7 @@ public extension CompressionLevel {
 /**
  Errors on gzipping/gunzipping based on the zlib error codes.
  */
-public enum GzipError: Error {
+public enum GzipError: ErrorType {
     // cf. http://www.zlib.net/manual.html
     
     /**
@@ -102,7 +102,7 @@ public enum GzipError: Error {
     internal init(code: Int32, msg: UnsafePointer<CChar>?) {
         
         let message: String = {
-            guard let msg = msg, let message = String(validatingUTF8: msg) else {
+            guard let msg = msg, let message = String(UTF8String: msg) else {
                 return "Unknown gzip error"
             }
             return message
@@ -157,7 +157,7 @@ public enum GzipError: Error {
 }
 
 
-public extension Data {
+public extension NSData {
     
     /**
      Check if the reciever is already gzipped.
@@ -166,7 +166,9 @@ public extension Data {
      */
     public var isGzipped: Bool {
         
-        return self.starts(with: [0x1f, 0x8b])  // check magic number
+        let bytes = Array(UnsafeBufferPointer(start: UnsafePointer<UInt8>(self.bytes), count: self.length))
+
+        return bytes.lazy.startsWith([0x1f, 0x8b]) // check magic number
     }
     
     
@@ -180,10 +182,11 @@ public extension Data {
     - throws: `GzipError`
     - returns: Gzip-compressed `Data` object.
     */
-    public func gzipped(level: CompressionLevel = .defaultCompression) throws -> Data {
+    public func gzipped(level: CompressionLevel = .defaultCompression) throws -> NSData {
         
-        guard self.count > 0 else {
-            return Data()
+        
+        guard self.length > 0 else {
+            return NSData()
         }
         
         var stream = self.createZStream()
@@ -200,24 +203,25 @@ public extension Data {
             throw GzipError(code: status, msg: stream.msg)
         }
         
-        var data = Data(capacity: CHUNK_SIZE)
+        
+        let data = NSMutableData(capacity: CHUNK_SIZE)!
         while stream.avail_out == 0 {
-            if Int(stream.total_out) >= data.count {
-                data.count += CHUNK_SIZE
+            if Int(stream.total_out) >= data.length {
+                data.length += CHUNK_SIZE
             }
             
             data.withUnsafeMutableBytes { (bytes: UnsafeMutablePointer<Bytef>) in
-                stream.next_out = bytes.advanced(by: Int(stream.total_out))
+                stream.next_out = bytes.advancedBy(Int(stream.total_out))
             }
-            stream.avail_out = uInt(data.count) - uInt(stream.total_out)
+            stream.avail_out = uInt(data.length) - uInt(stream.total_out)
             
             deflate(&stream, Z_FINISH)
         }
         
         deflateEnd(&stream)
-        data.count = Int(stream.total_out)
+        data.length = Int(stream.total_out)
         
-        return data
+        return data as NSData
     }
     
     
@@ -228,10 +232,10 @@ public extension Data {
     - throws: `GzipError`
     - returns: Gzip-decompressed `Data` object.
     */
-    public func gunzipped() throws -> Data {
+    public func gunzipped() throws -> NSData {
         
-        guard self.count > 0 else {
-            return Data()
+        guard self.length > 0 else {
+            return NSData()
         }
         
         var stream = self.createZStream()
@@ -248,17 +252,17 @@ public extension Data {
             throw GzipError(code: status, msg: stream.msg)
         }
         
-        var data = Data(capacity: self.count * 2)
+        let data = NSMutableData(capacity: self.length * 2)!
         
         repeat {
-            if Int(stream.total_out) >= data.count {
-                data.count += self.count / 2;
+            if Int(stream.total_out) >= data.length {
+                data.length += self.length / 2;
             }
             
             data.withUnsafeMutableBytes { (bytes: UnsafeMutablePointer<Bytef>) in
-                stream.next_out = bytes.advanced(by: Int(stream.total_out))
+                stream.next_out = bytes.advancedBy(Int(stream.total_out))
             }
-            stream.avail_out = uInt(data.count) - uInt(stream.total_out)
+            stream.avail_out = uInt(data.length) - uInt(stream.total_out)
             
             status = inflate(&stream, Z_SYNC_FLUSH)
             
@@ -274,7 +278,7 @@ public extension Data {
             throw GzipError(code: status, msg: stream.msg)
         }
         
-        data.count = Int(stream.total_out)
+        data.length = Int(stream.total_out)
         
         return data
     }
@@ -285,9 +289,9 @@ public extension Data {
         var stream = z_stream()
         
         self.withUnsafeBytes { (bytes: UnsafePointer<Bytef>) in
-            stream.next_in = UnsafeMutablePointer<Bytef>(mutating: bytes)
+            stream.next_in = UnsafeMutablePointer<Bytef>(bytes)
         }
-        stream.avail_in = uint(self.count)
+        stream.avail_in = uint(self.length)
         
         return stream
     }
@@ -295,5 +299,23 @@ public extension Data {
 }
 
 
+extension NSMutableData {
+
+    func withUnsafeMutableBytes<A>(f: UnsafeMutablePointer<A> -> ()) {
+        
+        f(UnsafeMutablePointer<A>(self.mutableBytes))
+    }
+}
+
+extension NSData {
+    
+    func withUnsafeBytes<A>(f: UnsafePointer<A> -> ()) {
+        
+        f(UnsafePointer<A>(self.bytes))
+
+    }
+}
+
+
 private let CHUNK_SIZE: Int = 2 ^ 14
-private let STREAM_SIZE: Int32 = Int32(MemoryLayout<z_stream>.size)
+private let STREAM_SIZE: Int32 = Int32(sizeof(z_stream))
